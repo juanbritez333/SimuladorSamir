@@ -416,6 +416,7 @@ html, body { height: 100%; overflow: hidden; background: var(--c-light); }
     src="about:blank"
     allow="fullscreen"
     allowfullscreen
+    onload="onIframeLoad()"
     title="Simulador TSJE">
   </iframe>
 </div>
@@ -504,7 +505,7 @@ const PADRON = {"2941045":{"n":"ABADIE ESCURRA MARCO ANTONIO","l":"COLEGIO NACIO
 // ════════════════════════════════════════════════════════════════
 //  CONFIG
 // ════════════════════════════════════════════════════════════════
-const SIMULADOR_URL = 'https://simuladoroficial.tsje.gov.py/sufragio.html?ubicacion=261.3.0';
+const SIMULADOR_URL = 'https://simuladoroficial.tsje.gov.py/app.html?ubicacion=261.3.0';
 const SHARE_URL     = window.location.href;
 const SHARE_MSG     = encodeURIComponent(
   '🗳️ *Samir Pedrozo — Lista 2E · Opción 6*\n' +
@@ -560,6 +561,21 @@ function consultarPadron(inputId, resultadoId, btnIniciarId) {
 // ════════════════════════════════════════════════════════════════
 //  SIMULADOR
 // ════════════════════════════════════════════════════════════════
+let iframeLoads = 0;
+
+function onIframeLoad() {
+  const iframe = document.getElementById('sim-frame');
+  if (!iframe || iframe.src === 'about:blank' || iframe.src === '') return;
+  
+  iframeLoads++;
+  console.log('Iframe loaded, count:', iframeLoads);
+  
+  // En la segunda carga (al presionar Imprimir y navegar internamente) se activa el post-voto
+  if (iframeLoads >= 2) {
+    mostrarPostvoto();
+  }
+}
+
 function iniciarSimulador() {
   const landing   = document.getElementById('landing');
   const frameWrap = document.getElementById('frame-wrap');
@@ -572,13 +588,12 @@ function iniciarSimulador() {
   escalarFrame();
   window.addEventListener('resize', escalarFrame);
 
-  // Cargar simulador oficial TSJE
-  if (iframe.src === 'about:blank' || !iframe.src.includes('tsje')) {
-    iframe.src = SIMULADOR_URL;
-  }
+  // Reiniciar contador de cargas y setear src
+  iframeLoads = 0;
+  iframe.src = SIMULADOR_URL;
 
   // Escuchar mensaje "IMPRESO" del iframe o timeout para post-voto
-  window._simTimer = setTimeout(mostrarPostvoto, 180000); // 3 min fallback
+  window._simTimer = setTimeout(mostrarPostvoto, 240000); // 4 min fallback
   window.addEventListener('message', onMsgFrame);
 }
 
@@ -611,7 +626,10 @@ function mostrarPostvoto() {
 
 function repetirSimulacion() {
   document.getElementById('postvoto').classList.remove('visible');
-  iniciarSimulador();
+  const iframe = document.getElementById('sim-frame');
+  iframe.src = 'about:blank';
+  iframeLoads = 0;
+  setTimeout(iniciarSimulador, 100);
 }
 
 // ════════════════════════════════════════════════════════════════
