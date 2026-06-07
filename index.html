@@ -328,6 +328,39 @@ html, body { height: 100%; overflow: hidden; background: var(--c-light); }
 @media (max-width: 380px) {
   #banner .sep, #banner .cand-lista { display: none; }
 }
+
+/* Estilos para lista de resultados de búsqueda por nombre */
+.padron-lista-resultados {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  background: white;
+}
+.padron-item-resultado {
+  padding: 8px 12px;
+  border-bottom: 1px solid #edf2f7;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #2d3748;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.padron-item-resultado:last-child {
+  border-bottom: none;
+}
+.padron-item-resultado:hover {
+  background: #f7fafc;
+  color: #1a202c;
+  font-weight: bold;
+}
+.padron-multi-info {
+  font-size: 0.8rem;
+  color: #718096;
+  margin-bottom: 4px;
+  text-align: left;
+}
 </style>
 </head>
 <body>
@@ -384,9 +417,9 @@ html, body { height: 100%; overflow: hidden; background: var(--c-light); }
 
     <!-- Formulario padrón -->
     <div class="form-padron" id="form-landing">
-      <label for="cedula-input">🪪 Ingresá tu número de cédula (sin puntos)</label>
+      <label for="cedula-input">🪪 Ingresá tu Cédula o Nombre/Apellido</label>
       <div class="row-input">
-        <input type="text" id="cedula-input" placeholder="Ej: 3994472" inputmode="numeric" maxlength="10" autofocus>
+        <input type="text" id="cedula-input" placeholder="Ej: 3994472 o Juan Pérez" autofocus>
         <button class="btn-consultar" onclick="consultarPadron('cedula-input','resultado-padron-landing','btn-iniciar-landing')">Consultar</button>
       </div>
     </div>
@@ -516,26 +549,94 @@ const SHARE_MSG     = encodeURIComponent(
 // ════════════════════════════════════════════════════════════════
 //  CONSULTA PADRÓN
 // ════════════════════════════════════════════════════════════════
+function removeAccents(str) {
+  return str.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+}
+
+function formatCI(ciStr) {
+  return ciStr.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
 function consultarPadron(inputId, resultadoId, btnIniciarId) {
-  const ci     = document.getElementById(inputId).value.trim().replace(/\D/g, '');
-  const div    = document.getElementById(resultadoId);
+  const inputVal = document.getElementById(inputId).value.trim();
+  const div      = document.getElementById(resultadoId);
   div.style.display = 'block';
 
-  if (!ci || ci.length < 4) {
+  if (!inputVal || inputVal.length < 3) {
     div.className = 'resultado-padron error';
-    div.innerHTML = '❌ Ingresá un número de cédula válido.';
+    div.innerHTML = '❌ Ingresá tu cédula o al menos 3 letras del nombre/apellido.';
     return;
   }
 
-  const r = PADRON[ci];
-  if (!r) {
-    div.className = 'resultado-padron error';
-    div.innerHTML = `<strong>No encontrado en el padrón</strong><br>
-      La cédula <strong>${ci}</strong> no está registrada en el padrón interno de Caacupé.<br>
-      <small style="color:#888">Si estás inscripto en otra seccional o partido, consultá en padron.tsje.gov.py</small>`;
-    return;
-  }
+  // Si son solo números (permitiendo puntos y espacios)
+  const cleanNum = inputVal.replace(/[\s.]/g, '');
+  const isNumeric = /^\d+$/.test(cleanNum);
 
+  if (isNumeric) {
+    const r = PADRON[cleanNum];
+    if (!r) {
+      div.className = 'resultado-padron error';
+      div.innerHTML = `<strong>No encontrado en el padrón</strong><br>
+        La cédula <strong>${formatCI(cleanNum)}</strong> no está registrada en el padrón interno de Caacupé.<br>
+        <small style="color:#888">Si estás inscripto en otra seccional o partido, consultá en padron.tsje.gov.py</small>`;
+      return;
+    }
+    mostrarFichaPadron(r, div, btnIniciarId);
+  } else {
+    // Búsqueda por Nombre / Apellido
+    const queryNormalized = removeAccents(inputVal);
+    const queryWords = queryNormalized.split(/\s+/).filter(w => w.length > 0);
+
+    const matches = [];
+    for (const ci in PADRON) {
+      const elector = PADRON[ci];
+      const electorNormalized = removeAccents(elector.n);
+      
+      // Debe contener todas las palabras del término de búsqueda
+      let matchAll = true;
+      for (let i = 0; i < queryWords.length; i++) {
+        if (!electorNormalized.includes(queryWords[i])) {
+          matchAll = false;
+          break;
+        }
+      }
+      if (matchAll) {
+        matches.push({ ci: ci, ...elector });
+      }
+    }
+
+    if (matches.length === 0) {
+      div.className = 'resultado-padron error';
+      div.innerHTML = `<strong>No encontrado</strong><br>
+        No se encontraron electores que coincidan con "<strong>${inputVal}</strong>" en Caacupé.`;
+      return;
+    }
+
+    if (matches.length > 15) {
+      div.className = 'resultado-padron error';
+      div.innerHTML = `<strong>Demasiados resultados (${matches.length})</strong><br>
+        Ingresá más letras o tu nombre y apellido completo para filtrar mejor.`;
+      return;
+    }
+
+    // Mostrar lista de resultados
+    div.className = 'resultado-padron ok';
+    let html = `<div class="padron-multi-info">Se encontraron ${matches.length} coincidencias:</div>`;
+    html += `<div class="padron-lista-resultados">`;
+    matches.forEach(m => {
+      html += `
+        <div class="padron-item-resultado" onclick="seleccionarElector('${m.ci}', '${resultadoId}', '${btnIniciarId}')">
+          👤 <strong>${m.n}</strong> (C.I. ${formatCI(m.ci)})<br>
+          <small>📍 ${m.l} · Mesa ${m.m}</small>
+        </div>
+      `;
+    });
+    html += `</div>`;
+    div.innerHTML = html;
+  }
+}
+
+function mostrarFichaPadron(r, div, btnIniciarId) {
   div.className = 'resultado-padron ok';
   div.innerHTML = `
     <div class="padron-nombre">👤 ${r.n}</div>
@@ -555,6 +656,14 @@ function consultarPadron(inputId, resultadoId, btnIniciarId) {
       btn.textContent = '🗳️ ¡PRACTICÁ TU VOTO!';
       btn.classList.add('grande');
     }
+  }
+}
+
+function seleccionarElector(ci, resultadoId, btnIniciarId) {
+  const r = PADRON[ci];
+  if (r) {
+    const div = document.getElementById(resultadoId);
+    mostrarFichaPadron(r, div, btnIniciarId);
   }
 }
 
